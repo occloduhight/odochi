@@ -5,7 +5,7 @@ pipeline {
 //            steps {
 //                git branch: 'main',
 //                credentialsId: 'git-cred',
-//                url: 'https://github.com/CloudHight/usteam.git'
+//                url: 'https://github.com/occloduhight/odochi.git'
 //            }
 //        }
         stage('Code Analysis') {
