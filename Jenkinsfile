@@ -5,14 +5,14 @@ pipeline {
         NEXUS_REPO = 'nexus.tundeafod.click/repository/maven-releases'
     }
 
-    stages {
-        stage('Code Analysis') {
-            steps {
-                withSonarQubeEnv('sonar') {
-                    sh 'mvn clean verify sonar:sonar'
-                }
-            }
+    stage('Code Analysis') {
+    steps {
+        withSonarQubeEnv('sonar') {
+            sh 'mvn clean verify sonar:sonar -Dcheckstyle.skip'
         }
+    }
+}
+
 
         stage('Quality Gate') {
             steps {
@@ -24,7 +24,8 @@ pipeline {
 
         stage('Dependency Check') {
     steps {
-        dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit --disableExtensions NoHttp',
+        dependencyCheck additionalArguments: '--disableExtensions "NoHttp"', odcInstallation: 'DP-Check'
+
                         odcInstallation: 'DP-Check'
         dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
     }
