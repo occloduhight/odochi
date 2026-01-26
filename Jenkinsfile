@@ -23,16 +23,13 @@ pipeline {
             }
         }
 
-       stage('Dependency Check') {
-    steps {
-        
-        dependencyCheck odcInstallation: 'DP-Check'
-        
-        
-        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-    }
-}
-
+        stage('Dependency Check') {
+            steps {
+                // Run Dependency-Check without unsupported flags
+                dependencyCheck odcInstallation: 'DP-Check'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
 
         stage('Build Artifact') {
             steps {
@@ -55,12 +52,8 @@ pipeline {
         stage('Docker Login & Push') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus-username-password', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-
                     sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
-                    
-                    
                     sh 'docker tag spring-petclinic:2.4.2 $NEXUS_REPO/spring-petclinic:2.4.2'
-                    
                     sh 'docker push $NEXUS_REPO/spring-petclinic:2.4.2'
                 }
             }
