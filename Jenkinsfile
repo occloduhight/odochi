@@ -60,7 +60,7 @@ pipeline {
         stage('Docker Login & Push') {
     steps {
         
-        sh 'echo "10.0.5.1 nexus.tundeafod.click" | sudo tee -a /etc/hosts'
+        sh 'echo "10.0.1.5 nexus.tundeafod.click" | sudo tee -a /etc/hosts'
         
         withCredentials([usernamePassword(credentialsId: 'nexus-repo', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
             sh """
