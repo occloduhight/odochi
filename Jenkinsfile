@@ -2,12 +2,11 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_REPO   = credentials('nexus-url')        // 'nexus.tundeafod.click/repository/nexus-repo'
-        NEXUS_USER   = credentials('nexus-username')   // Nexus username
-        NEXUS_PASS   = credentials('nexus-password')   // Nexus password
-        IMAGE_NAME   = 'spring-petclinic:2.4.2'
-        NEXUS_HOST   = 'nexus.tundeafod.click'
-        NEXUS_IP     = '10.0.1.5'
+        // Nexus settings
+        NEXUS_REPO = 'http://nexus.tundeafod.click:8081/repository/nexus-repo' // HTTP + port 8081
+        IMAGE_NAME = 'spring-petclinic:2.4.2'
+        NEXUS_HOST = 'nexus.tundeafod.click'
+        NEXUS_IP   = '10.0.1.5'
     }
 
     stages {
@@ -57,22 +56,24 @@ pipeline {
 
         stage('Docker Login & Push') {
             steps {
-                script {
-                    // Ensure Nexus is resolvable
-                    def resolved = sh(script: "getent hosts ${NEXUS_HOST} || echo NOTFOUND", returnStdout: true).trim()
-                    if (resolved == 'NOTFOUND') {
-                        echo "DNS failed. Mapping ${NEXUS_HOST} → ${NEXUS_IP}"
-                        sh "echo '${NEXUS_IP} ${NEXUS_HOST}' | sudo tee -a /etc/hosts"
-                    } else {
-                        echo "${NEXUS_HOST} already resolvable"
-                    }
+                withCredentials([usernamePassword(credentialsId: 'nexus-repo', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    script {
+                        // Ensure Nexus is resolvable
+                        def resolved = sh(script: "getent hosts ${NEXUS_HOST} || echo NOTFOUND", returnStdout: true).trim()
+                        if (resolved == 'NOTFOUND') {
+                            echo "DNS failed. Mapping ${NEXUS_HOST} → ${NEXUS_IP}"
+                            sh "echo '${NEXUS_IP} ${NEXUS_HOST}' | sudo tee -a /etc/hosts"
+                        } else {
+                            echo "${NEXUS_HOST} already resolvable"
+                        }
 
-                    // Docker login and push
-                    sh """
-                        echo ${NEXUS_PASS} | docker login -u ${NEXUS_USER} --password-stdin ${NEXUS_REPO}
-                        docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME}
-                        docker push ${NEXUS_REPO}/${IMAGE_NAME}
-                    """
+                        // Docker login and push
+                        sh """
+                            echo \$NEXUS_PASS | docker login -u \$NEXUS_USER --password-stdin ${NEXUS_REPO}
+                            docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME}
+                            docker push ${NEXUS_REPO}/${IMAGE_NAME}
+                        """
+                    }
                 }
             }
         }
@@ -99,14 +100,9 @@ pipeline {
                 retry(3) {
                     sleep 30
                     script {
-                        def status = sh(
-                            script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.tundeafod.click',
-                            returnStdout: true
-                        ).trim()
-
+                        def status = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.tundeafod.click', returnStdout: true).trim()
                         def color = status == '200' ? 'good' : 'danger'
                         slackSend(color: color, message: "Stage app HTTP status: ${status}", tokenCredentialId: 'slack')
-
                         if (status != '200') { error("Stage not ready") }
                     }
                 }
@@ -137,19 +133,14 @@ pipeline {
                 retry(3) {
                     sleep 30
                     script {
-                        def status = sh(
-                            script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.tundeafod.click',
-                            returnStdout: true
-                        ).trim()
-
+                        def status = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.tundeafod.click', returnStdout: true).trim()
                         def color = status == '200' ? 'good' : 'danger'
                         slackSend(color: color, message: "Prod app HTTP status: ${status}", tokenCredentialId: 'slack')
-
                         if (status != '200') { error("Prod not ready") }
                     }
                 }
             }
         }
 
-    } // end of stages
-} // end of pipeline
+    }
+}
