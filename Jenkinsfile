@@ -8,14 +8,15 @@ pipeline {
     }
 
     stages {
-        stage('Code Analysis') {
-            steps {
-                withSonarQubeEnv('sonar') {
-                    // Use stable Sonar Maven plugin version
-                    sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.1.2184:sonar'
-                }
+    stage('Code Analysis') {
+        steps {
+            withSonarQubeEnv('sonar') {
+                sh 'mvn clean verify sonar:sonar'
             }
         }
+    }
+}
+
 
         stage('Quality Gate') {
             steps {
