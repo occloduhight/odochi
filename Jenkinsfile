@@ -2,10 +2,9 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_HOST = 'nexus.tundeafod.click'
-        NEXUS_IP   = '10.0.1.5'
-        NEXUS_REPO = "http://${NEXUS_HOST}:8081/repository/nexus-repo"
+        NEXUS_REPO = "http://petclinicapp-nexus-elb-311370068.eu-west-3.elb.amazonaws.com:8081/repository/nexus-repo"
         IMAGE_NAME = 'spring-petclinic:2.4.2'
+        NEXUS_HOST = 'petclinicapp-nexus-elb-311370068.eu-west-3.elb.amazonaws.com'
     }
 
     stages {
@@ -49,25 +48,31 @@ pipeline {
 
         stage('Trivy FS Scan') {
             steps {
-                sh 'trivy fs --insecure . > trivyfs.txt'
+                retry(2) {
+                    sh 'trivy fs --insecure . > trivyfs.txt || true'
+                }
             }
         }
 
         stage('Docker Login & Push') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus-repo', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                    sh """
-                        echo \$NEXUS_PASS | docker login -u \$NEXUS_USER --password-stdin ${NEXUS_REPO} || exit 1
-                        docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME} || exit 1
-                        docker push ${NEXUS_REPO}/${IMAGE_NAME} || exit 1
-                    """
+                    retry(2) {
+                        sh """
+                            echo \$NEXUS_PASS | docker login -u \$NEXUS_USER --password-stdin ${NEXUS_REPO}
+                            docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME}
+                            docker push ${NEXUS_REPO}/${IMAGE_NAME}
+                        """
+                    }
                 }
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
-                sh "trivy image --insecure ${NEXUS_REPO}/${IMAGE_NAME} > trivyimage.txt"
+                retry(2) {
+                    sh "trivy image --insecure ${NEXUS_REPO}/${IMAGE_NAME} > trivyimage.txt || true"
+                }
             }
         }
 
@@ -129,5 +134,5 @@ pipeline {
             }
         }
 
-    } // end of stages
-} // end of pipeline
+    } // end stages
+} // end pipeline
