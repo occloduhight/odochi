@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        // Docker repository for pushing images
+        // Nexus Docker repository
         NEXUS_REPO = 'nexus.tundeafod.click/repository/nexus-repo'
     }
 
@@ -39,7 +39,8 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t petclinicapps .'
+                // Tag Docker image with Maven artifactId and version
+                sh 'docker build -t spring-petclinic:2.4.2 .'
             }
         }
 
@@ -49,34 +50,26 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
-    steps {
-        // Tag Docker image with Maven artifactId and version
-        sh 'docker build -t spring-petclinic:2.4.2 .'
-    }
-}
-
         stage('Docker Login & Push') {
-    steps {
-        withCredentials([usernamePassword(credentialsId: 'nexus-username-password', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-            // Login to Nexus Docker repo
-            sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
-            
-            // Tag for Nexus repo
-            sh 'docker tag spring-petclinic:2.4.2 $NEXUS_REPO/spring-petclinic:2.4.2'
-            
-            // Push to Nexus
-            sh 'docker push $NEXUS_REPO/spring-petclinic:2.4.2'
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'nexus-username-password', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    // Login to Nexus Docker repo
+                    sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
+                    
+                    // Tag for Nexus repo
+                    sh 'docker tag spring-petclinic:2.4.2 $NEXUS_REPO/spring-petclinic:2.4.2'
+                    
+                    // Push to Nexus
+                    sh 'docker push $NEXUS_REPO/spring-petclinic:2.4.2'
+                }
+            }
         }
-    }
-}
 
         stage('Trivy Image Scan') {
-    steps {
-        sh 'trivy image $NEXUS_REPO/spring-petclinic:2.4.2 > trivyimage.txt'
-    }
-}
-
+            steps {
+                sh 'trivy image $NEXUS_REPO/spring-petclinic:2.4.2 > trivyimage.txt'
+            }
+        }
 
         stage('Deploy to Stage') {
             steps {
