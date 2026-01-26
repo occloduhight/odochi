@@ -2,11 +2,10 @@ pipeline {
     agent any
 
     environment {
-        // Nexus settings
-        NEXUS_REPO = 'http://nexus.tundeafod.click:8081/repository/nexus-repo' // HTTP + port 8081
-        IMAGE_NAME = 'spring-petclinic:2.4.2'
         NEXUS_HOST = 'nexus.tundeafod.click'
         NEXUS_IP   = '10.0.1.5'
+        NEXUS_REPO = "http://${NEXUS_HOST}:8081/repository/nexus-repo"
+        IMAGE_NAME = 'spring-petclinic:2.4.2'
     }
 
     stages {
@@ -50,37 +49,25 @@ pipeline {
 
         stage('Trivy FS Scan') {
             steps {
-                sh 'trivy fs . > trivyfs.txt'
+                sh 'trivy fs --insecure . > trivyfs.txt'
             }
         }
 
         stage('Docker Login & Push') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus-repo', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                    script {
-                        // Ensure Nexus is resolvable
-                        def resolved = sh(script: "getent hosts ${NEXUS_HOST} || echo NOTFOUND", returnStdout: true).trim()
-                        if (resolved == 'NOTFOUND') {
-                            echo "DNS failed. Mapping ${NEXUS_HOST} → ${NEXUS_IP}"
-                            sh "echo '${NEXUS_IP} ${NEXUS_HOST}' | sudo tee -a /etc/hosts"
-                        } else {
-                            echo "${NEXUS_HOST} already resolvable"
-                        }
-
-                        // Docker login and push
-                        sh """
-                            echo \$NEXUS_PASS | docker login -u \$NEXUS_USER --password-stdin ${NEXUS_REPO}
-                            docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME}
-                            docker push ${NEXUS_REPO}/${IMAGE_NAME}
-                        """
-                    }
+                    sh """
+                        echo \$NEXUS_PASS | docker login -u \$NEXUS_USER --password-stdin ${NEXUS_REPO} || exit 1
+                        docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME} || exit 1
+                        docker push ${NEXUS_REPO}/${IMAGE_NAME} || exit 1
+                    """
                 }
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
-                sh "trivy image ${NEXUS_REPO}/${IMAGE_NAME} > trivyimage.txt"
+                sh "trivy image --insecure ${NEXUS_REPO}/${IMAGE_NAME} > trivyimage.txt"
             }
         }
 
@@ -142,5 +129,5 @@ pipeline {
             }
         }
 
-    }
-}
+    } // end of stages
+} // end of pipeline
