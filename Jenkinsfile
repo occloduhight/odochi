@@ -49,15 +49,28 @@ pipeline {
             }
         }
 
-        stage('Docker Login & Push') {
+         stage('Test Docker Login') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'nexus-username-password', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
-                    sh 'docker tag spring-petclinic:2.4.2 $NEXUS_REPO/spring-petclinic:2.4.2'
-                    sh 'docker push $NEXUS_REPO/spring-petclinic:2.4.2'
-                }
-            }
+        withCredentials([usernamePassword(credentialsId: 'nexus-repo', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+            sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
         }
+    }
+}
+   
+        stage('Docker Login & Push') {
+    steps {
+        
+        sh 'echo "10.0.5.1 nexus.tundeafod.click" | sudo tee -a /etc/hosts'
+        
+        withCredentials([usernamePassword(credentialsId: 'nexus-repo', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+            sh """
+                docker login -u $USER -p $PASS $NEXUS_REPO
+                docker tag spring-petclinic:2.4.2 $NEXUS_REPO/spring-petclinic:2.4.2
+                docker push $NEXUS_REPO/spring-petclinic:2.4.2
+            """
+        }
+    }
+}
 
         stage('Trivy Image Scan') {
             steps {
