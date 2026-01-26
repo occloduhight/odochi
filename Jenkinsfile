@@ -2,10 +2,12 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_REPO = 'nexus.tundeafod.click/repository/nexus-repo'
-        NEXUS_HOST = 'nexus.tundeafod.click'
-        NEXUS_IP   = '10.0.1.5'
-        IMAGE_NAME = 'spring-petclinic:2.4.2'
+        NEXUS_REPO   = credentials('nexus-url')        // 'nexus.tundeafod.click/repository/nexus-repo'
+        NEXUS_USER   = credentials('nexus-username')   // Nexus username
+        NEXUS_PASS   = credentials('nexus-password')   // Nexus password
+        IMAGE_NAME   = 'spring-petclinic:2.4.2'
+        NEXUS_HOST   = 'nexus.tundeafod.click'
+        NEXUS_IP     = '10.0.1.5'
     }
 
     stages {
@@ -28,8 +30,10 @@ pipeline {
 
         stage('Dependency Check') {
             steps {
-                dependencyCheck odcInstallation: 'DP-Check'
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                withCredentials([string(credentialsId: 'nvd-key', variable: 'NVD_API_KEY')]) {
+                    dependencyCheck additionalArguments: "--nvdApiKey ${NVD_API_KEY}", odcInstallation: 'DP-Check'
+                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                }
             }
         }
 
@@ -54,12 +58,8 @@ pipeline {
         stage('Docker Login & Push') {
             steps {
                 script {
-
-                    def resolved = sh(
-                        script: "getent hosts ${NEXUS_HOST} || echo NOTFOUND",
-                        returnStdout: true
-                    ).trim()
-
+                    // Ensure Nexus is resolvable
+                    def resolved = sh(script: "getent hosts ${NEXUS_HOST} || echo NOTFOUND", returnStdout: true).trim()
                     if (resolved == 'NOTFOUND') {
                         echo "DNS failed. Mapping ${NEXUS_HOST} → ${NEXUS_IP}"
                         sh "echo '${NEXUS_IP} ${NEXUS_HOST}' | sudo tee -a /etc/hosts"
@@ -67,19 +67,12 @@ pipeline {
                         echo "${NEXUS_HOST} already resolvable"
                     }
 
-                    withCredentials([
-                        usernamePassword(
-                            credentialsId: 'nexus-repo',
-                            usernameVariable: 'USER',
-                            passwordVariable: 'PASS'
-                        )
-                    ]) {
-                        sh """
-                            echo \$PASS | docker login -u \$USER --password-stdin ${NEXUS_REPO}
-                            docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME}
-                            docker push ${NEXUS_REPO}/${IMAGE_NAME}
-                        """
-                    }
+                    // Docker login and push
+                    sh """
+                        echo ${NEXUS_PASS} | docker login -u ${NEXUS_USER} --password-stdin ${NEXUS_REPO}
+                        docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME}
+                        docker push ${NEXUS_REPO}/${IMAGE_NAME}
+                    """
                 }
             }
         }
@@ -111,15 +104,10 @@ pipeline {
                             returnStdout: true
                         ).trim()
 
-                        if (status != '200') {
-                            error "Stage not ready (HTTP ${status})"
-                        }
+                        def color = status == '200' ? 'good' : 'danger'
+                        slackSend(color: color, message: "Stage app HTTP status: ${status}", tokenCredentialId: 'slack')
 
-                        slackSend(
-                            color: 'good',
-                            message: "Stage app is live (HTTP ${status})",
-                            tokenCredentialId: 'slack'
-                        )
+                        if (status != '200') { error("Stage not ready") }
                     }
                 }
             }
@@ -154,18 +142,14 @@ pipeline {
                             returnStdout: true
                         ).trim()
 
-                        if (status != '200') {
-                            error "Prod not ready (HTTP ${status})"
-                        }
+                        def color = status == '200' ? 'good' : 'danger'
+                        slackSend(color: color, message: "Prod app HTTP status: ${status}", tokenCredentialId: 'slack')
 
-                        slackSend(
-                            color: 'good',
-                            message: "Prod app is live (HTTP ${status})",
-                            tokenCredentialId: 'slack'
-                        )
+                        if (status != '200') { error("Prod not ready") }
                     }
                 }
             }
         }
-    }
-}
+
+    } // end of stages
+} // end of pipeline
