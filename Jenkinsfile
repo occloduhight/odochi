@@ -2,13 +2,10 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_USER = credentials('nexus-username')
-        NEXUS_PASSWORD = credentials('nexus-password')
         NEXUS_REPO = 'nexus.tundeafod.click/repository/maven-releases'
     }
 
     stages {
-
         stage('Code Analysis') {
             steps {
                 withSonarQubeEnv('sonar') {
@@ -50,6 +47,8 @@ pipeline {
                 sh 'trivy fs . > trivyfs.txt'
             }
         }
+
+        // ===================== Remaining Stages =====================
 
         stage('Docker Login & Push') {
             steps {
@@ -121,5 +120,6 @@ pipeline {
                 }
             }
         }
-    }
+
+    } // end of stages
 }
