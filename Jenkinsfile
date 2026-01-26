@@ -1,16 +1,18 @@
 pipeline {
     agent any
+
     environment {
         NEXUS_USER = credentials('nexus-username')
         NEXUS_PASSWORD = credentials('nexus-password')
-        NEXUS_REPO = credentials('nexus-repo')
+        NEXUS_REPO = 'nexus.tundeafod.click/repository/maven-releases'
     }
+
     stages {
         stage('Code Analysis') {
             steps {
                 withSonarQubeEnv('sonar') {
-                    // Use the full plugin coordinates to avoid NoPluginFoundForPrefixException
-                    sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.10.0.1446:sonar'
+                    // Use stable Sonar Maven plugin version
+                    sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.1.2184:sonar'
                 }
             }
         }
@@ -51,33 +53,35 @@ pipeline {
                         file: 'target/spring-petclinic-2.4.2.war',
                         type: 'war'
                     ]],
-                    credentialsId: 'nexus-creds',
-                    groupId: 'Petclinic',
+                    credentialsId: 'nexus-username-password',
+                    groupId: 'org.springframework.samples',
                     nexusUrl: 'nexus.tundeafod.click',
                     nexusVersion: 'nexus3',
                     protocol: 'https',
-                    repository: 'nexus-repo',
-                    version: '1.0'
+                    repository: 'maven-releases',
+                    version: '2.4.2'
                 )
             }
         }
 
-        stage('Trivy fs Scan') {
+        stage('Trivy FS Scan') {
             steps {
-                sh "trivy fs . > trivyfs.txt"
+                sh 'trivy fs . > trivyfs.txt'
             }
         }
 
         stage('Docker Login & Push') {
             steps {
-                sh 'docker login --username $NEXUS_USER --password $NEXUS_PASSWORD $NEXUS_REPO'
-                sh 'docker push $NEXUS_REPO/petclinicapps'
+                withCredentials([usernamePassword(credentialsId: 'nexus-username-password', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
+                    sh 'docker push $NEXUS_REPO/petclinicapps'
+                }
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
-                sh "trivy image $NEXUS_REPO/petclinicapps > trivyimage.txt"
+                sh 'trivy image $NEXUS_REPO/petclinicapps > trivyimage.txt'
             }
         }
 
@@ -91,22 +95,24 @@ pipeline {
 
         stage('Check Stage Website') {
             steps {
-                sleep 90
-                script {
-                    def response = sh(script: "curl -s -o /dev/null -w \"%{http_code}\" https://stage.tundeafod.click", returnStdout: true).trim()
-                    if (response == "200") {
-                        slackSend(color: 'good', message: "Stage app is up: HTTP ${response}", tokenCredentialId: 'slack')
-                    } else {
-                        slackSend(color: 'danger', message: "Stage app down: HTTP ${response}", tokenCredentialId: 'slack')
+                retry(3) { // retry 3 times if the site is not up
+                    sleep 30
+                    script {
+                        def response = sh(script: "curl -s -o /dev/null -w \"%{http_code}\" https://stage.tundeafod.click", returnStdout: true).trim()
+                        if (response != "200") {
+                            error("Stage site not ready yet: HTTP ${response}")
+                        } else {
+                            slackSend(color: 'good', message: "Stage app is up: HTTP ${response}", tokenCredentialId: 'slack')
+                        }
                     }
                 }
             }
         }
 
-        stage('Request for Approval') {
+        stage('Request Approval for Prod') {
             steps {
                 timeout(activity: true, time: 10) {
-                    input message: 'Needs Approval', submitter: 'admin'
+                    input message: 'Approve deployment to PROD?', submitter: 'admin'
                 }
             }
         }
@@ -121,13 +127,15 @@ pipeline {
 
         stage('Check Prod Website') {
             steps {
-                sleep 90
-                script {
-                    def response = sh(script: "curl -s -o /dev/null -w \"%{http_code}\" https://prod.tundeafod.click", returnStdout: true).trim()
-                    if (response == "200") {
-                        slackSend(color: 'good', message: "Prod app is up: HTTP ${response}", tokenCredentialId: 'slack')
-                    } else {
-                        slackSend(color: 'danger', message: "Prod app down: HTTP ${response}", tokenCredentialId: 'slack')
+                retry(3) {
+                    sleep 30
+                    script {
+                        def response = sh(script: "curl -s -o /dev/null -w \"%{http_code}\" https://prod.tundeafod.click", returnStdout: true).trim()
+                        if (response != "200") {
+                            error("Prod site not ready yet: HTTP ${response}")
+                        } else {
+                            slackSend(color: 'good', message: "Prod app is up: HTTP ${response}", tokenCredentialId: 'slack')
+                        }
                     }
                 }
             }
