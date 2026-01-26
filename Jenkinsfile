@@ -23,12 +23,16 @@ pipeline {
             }
         }
 
-        stage('Dependency Check') {
-            steps {
-                dependencyCheck additionalArguments: '--disableExtensions "NoHttp"', odcInstallation: 'DP-Check'
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-            }
-        }
+       stage('Dependency Check') {
+    steps {
+        
+        dependencyCheck odcInstallation: 'DP-Check'
+        
+        
+        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+    }
+}
+
 
         stage('Build Artifact') {
             steps {
