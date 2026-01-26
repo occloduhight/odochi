@@ -2,7 +2,6 @@ pipeline {
     agent any
 
     environment {
-        // Nexus Docker repository
         NEXUS_REPO = 'nexus.tundeafod.click/repository/nexus-repo'
     }
 
@@ -18,7 +17,7 @@ pipeline {
 
         stage('Quality Gate') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') { // Increased timeout
+                timeout(time: 5, unit: 'MINUTES') { 
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -39,7 +38,6 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                // Tag Docker image with Maven artifactId and version
                 sh 'docker build -t spring-petclinic:2.4.2 .'
             }
         }
@@ -53,13 +51,12 @@ pipeline {
         stage('Docker Login & Push') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus-username-password', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    // Login to Nexus Docker repo
+
                     sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
                     
-                    // Tag for Nexus repo
+                    
                     sh 'docker tag spring-petclinic:2.4.2 $NEXUS_REPO/spring-petclinic:2.4.2'
                     
-                    // Push to Nexus
                     sh 'docker push $NEXUS_REPO/spring-petclinic:2.4.2'
                 }
             }
@@ -97,7 +94,7 @@ pipeline {
 
         stage('Request Approval for Prod') {
             steps {
-                timeout(activity: true, time: 10) {
+                timeout(time: 10, unit: 'MINUTES') {
                     input message: 'Approve deployment to PROD?', submitter: 'admin'
                 }
             }
