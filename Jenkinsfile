@@ -8,7 +8,7 @@ pipeline {
     stages {
         stage('Code Analysis') {
             steps {
-                withSonarQubeEnv('sonarqube') {
+                withSonarQubeEnv('sonar') {
                     // Use the full plugin coordinates to avoid NoPluginFoundForPrefixException
                     sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.10.0.1446:sonar'
                 }
