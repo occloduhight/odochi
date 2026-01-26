@@ -2,35 +2,34 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_REPO = 'nexus.tundeafod.click/repository/maven-releases'
+        // Docker repository for pushing images
+        NEXUS_REPO = 'nexus.tundeafod.click/repository/nexus-repo'
     }
 
-    stage('Code Analysis') {
-    steps {
-        withSonarQubeEnv('sonar') {
-            sh 'mvn clean verify sonar:sonar -Dcheckstyle.skip'
+    stages {
+
+        stage('Code Analysis') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh 'mvn clean verify sonar:sonar -Dcheckstyle.skip'
+                }
+            }
         }
-    }
-}
-
 
         stage('Quality Gate') {
             steps {
-                timeout(time: 2, unit: 'MINUTES') {
+                timeout(time: 5, unit: 'MINUTES') { // Increased timeout
                     waitForQualityGate abortPipeline: true
                 }
             }
         }
 
         stage('Dependency Check') {
-    steps {
-        dependencyCheck additionalArguments: '--disableExtensions "NoHttp"', odcInstallation: 'DP-Check'
-
-                        odcInstallation: 'DP-Check'
-        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-    }
-}
-
+            steps {
+                dependencyCheck additionalArguments: '--disableExtensions "NoHttp"', odcInstallation: 'DP-Check'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
 
         stage('Build Artifact') {
             steps {
@@ -50,22 +49,34 @@ pipeline {
             }
         }
 
-        // ===================== Remaining Stages =====================
+        stage('Build Docker Image') {
+    steps {
+        // Tag Docker image with Maven artifactId and version
+        sh 'docker build -t spring-petclinic:2.4.2 .'
+    }
+}
 
         stage('Docker Login & Push') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'nexus-username-password', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
-                    sh 'docker push $NEXUS_REPO/petclinicapps'
-                }
-            }
+    steps {
+        withCredentials([usernamePassword(credentialsId: 'nexus-username-password', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+            // Login to Nexus Docker repo
+            sh 'docker login -u $USER -p $PASS $NEXUS_REPO'
+            
+            // Tag for Nexus repo
+            sh 'docker tag spring-petclinic:2.4.2 $NEXUS_REPO/spring-petclinic:2.4.2'
+            
+            // Push to Nexus
+            sh 'docker push $NEXUS_REPO/spring-petclinic:2.4.2'
         }
+    }
+}
 
         stage('Trivy Image Scan') {
-            steps {
-                sh 'trivy image $NEXUS_REPO/petclinicapps > trivyimage.txt'
-            }
-        }
+    steps {
+        sh 'trivy image $NEXUS_REPO/spring-petclinic:2.4.2 > trivyimage.txt'
+    }
+}
+
 
         stage('Deploy to Stage') {
             steps {
@@ -124,4 +135,4 @@ pipeline {
         }
 
     } // end of stages
-}
+} // end of pipeline

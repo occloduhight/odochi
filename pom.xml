@@ -128,6 +128,19 @@
         </dependency>
     </dependencies>
 
+<distributionManagement>
+    <repository>
+        <id>nexus-maven-repo</id> <!-- must match credentials ID in Jenkins or settings.xml -->
+        <name>Releases</name>
+        <url>https://nexus.tundeafod.click/repository/maven-releases</url>
+    </repository>
+    <snapshotRepository>
+        <id>nexus-maven-repo</id>
+        <name>Snapshots</name>
+        <url>https://nexus.tundeafod.click/repository/maven-snapshots</url>
+    </snapshotRepository>
+</distributionManagement>
+
     <build>
         <plugins>
             <!-- Spring Java Format -->
