@@ -43,25 +43,32 @@ pipeline{
         }
        stage('Push Artifact to Nexus Repo') {
     steps {
-        nexusArtifactUploader(
-            nexusVersion: 'nexus3',
-            protocol: 'https',
-            nexusUrl: 'nexus.odochidevops.space',
-            repository: 'nexus-maven-repo',
-            groupId: 'org.springframework.samples',
-            version: '2.4.2',
-            credentialsId: 'nexus-maven-cred',
-            artifacts: [
-                [
-                    artifactId: 'spring-petclinic',
-                    classifier: '',
-                    file: 'target/spring-petclinic-2.4.2.war',
-                    type: 'war'
-                ]
-            ]
-        )
+        script {
+            try {
+                nexusArtifactUploader(
+                    nexusVersion: 'nexus3',
+                    protocol: 'http',
+                    nexusUrl: 'nexus.odochidevops.space',
+                    repository: 'nexus-maven-repo',
+                    groupId: 'org.springframework.samples',
+                    version: '2.4.2',
+                    credentialsId: 'nexus-maven-cred',
+                    artifacts: [
+                        [
+                            artifactId: 'spring-petclinic',
+                            classifier: '',
+                            file: 'target/spring-petclinic-2.4.2.war',
+                            type: 'war'
+                        ]
+                    ]
+                )
+            } catch (e) {
+                error "Nexus upload failed: ${e}"
+            }
+        }
     }
 }
+
 
 stage('Build Docker Image') {
     steps {
