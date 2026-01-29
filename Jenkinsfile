@@ -10,14 +10,17 @@ pipeline {
         SLACK_TOKEN = credentials('slack')             // Slack bot token
     }
 
-    stages {
-        stage('Code analysis stage') {
-            steps {
-                withSonarQubeEnv('sonarqube') {
-                    sh 'mvn sonar:sonar'
-                }
-            }
-        }
+    stage('Code analysis stage') {
+    steps {
+        sh '''
+            export SONAR_TOKEN=${SONAR_TOKEN}
+            mvn sonar:sonar \
+              -Dsonar.host.url=https://sonar.odochidevops.space/ \
+              -Dsonar.login=${SONAR_TOKEN}
+        '''
+    }
+}
+
 
         stage('Quality gate') {
             steps {
