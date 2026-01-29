@@ -41,15 +41,15 @@ pipeline{
                 sh 'mvn clean package -DskipTests -Dcheckstyle.skip'
             }
         }
-        stage('Push Artifact to Nexus Repo') {
+       stage('Push Artifact to Nexus Repo') {
     steps {
         nexusArtifactUploader(
             nexusVersion: 'nexus3',
             protocol: 'https',
             nexusUrl: 'nexus.odochidevops.space',
             repository: 'nexus-maven-repo',
-            groupId: 'Petclinic',
-            version: '1.0',
+            groupId: 'org.springframework.samples',
+            version: '2.4.2',
             credentialsId: 'nexus-maven-cred',
             artifacts: [
                 [
@@ -63,11 +63,16 @@ pipeline{
     }
 }
 
-        stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t $NEXUS_REPO/nexus-docker-repo/apppetclinic .'
-            }
-        }
+stage('Build Docker Image') {
+    steps {
+        sh '''
+            docker build \
+            -t ${NEXUS_REPO}/nexus-docker-repo/apppetclinic:2.4.2 \
+            .
+        '''
+    }
+}
+
         stage('Log Into Nexus Docker Repo') {
             steps {
                 sh 'docker login --username $NEXUS_USER --password $NEXUS_PASSWORD $NEXUS_REPO'
