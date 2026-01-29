@@ -47,7 +47,7 @@ pipeline{
             try {
                 nexusArtifactUploader(
                     nexusVersion: 'nexus3',
-                    protocol: 'http',
+                    protocol: 'https',
                     nexusUrl: 'nexus.odochidevops.space',
                     repository: 'nexus-maven-repo',
                     groupId: 'org.springframework.samples',
