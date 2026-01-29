@@ -42,20 +42,27 @@ pipeline{
             }
         }
         stage('Push Artifact to Nexus Repo') {
-            steps {
-                nexusArtifactUploader artifacts: [[artifactId: 'spring-petclinic',
-                classifier: '',
-                file: 'target/spring-petclinic-2.4.2.war',
-                type: 'war']],
-                credentialsId: 'nexus-maven-cred',
-                groupId: 'Petclinic',
-                nexusUrl: 'nexus.odochidevops.space',
-                nexusVersion: 'nexus3',
-                protocol: 'https',
-                repository: 'nexus-maven-repo',
-                version: '1.0'
-            }
-        }
+    steps {
+        nexusArtifactUploader(
+            nexusVersion: 'nexus3',
+            protocol: 'https',
+            nexusUrl: 'nexus.odochidevops.space',
+            repository: 'nexus-maven-repo',
+            groupId: 'Petclinic',
+            version: '1.0',
+            credentialsId: 'nexus-maven-cred',
+            artifacts: [
+                [
+                    artifactId: 'spring-petclinic',
+                    classifier: '',
+                    file: 'target/spring-petclinic-2.4.2.war',
+                    type: 'war'
+                ]
+            ]
+        )
+    }
+}
+
         stage('Build Docker Image') {
             steps {
                 sh 'docker build -t $NEXUS_REPO/nexus-docker-repo/apppetclinic .'
