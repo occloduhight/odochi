@@ -2,9 +2,12 @@ pipeline {
     agent any
 
     environment {
-        NEXUS_REPO = "http://petclinicapp-nexus-elb-311370068.eu-west-3.elb.amazonaws.com:8081/repository/nexus-repo"
-        IMAGE_NAME = 'spring-petclinic:2.4.2'
-        NEXUS_HOST = 'petclinicapp-nexus-elb-311370068.eu-west-3.elb.amazonaws.com'
+       NEXUS_USER = credentials('nexus-username')
+        NEXUS_PASSWORD = credentials('nexus-password')
+        NEXUS_REPO = credentials('nexus-docker-repo')
+        NVD_API_KEY= credentials('nvd-key')
+        BASTION_IP = credentials('bastion-ip')
+        ANSIBLE_IP = credentials('ansible-ip')
     }
 
     stages {
@@ -27,16 +30,34 @@ pipeline {
 
         stage('Dependency Check') {
             steps {
-                withCredentials([string(credentialsId: 'nvd-key', variable: 'NVD_API_KEY')]) {
-                    dependencyCheck additionalArguments: "--nvdApiKey ${NVD_API_KEY}", odcInstallation: 'DP-Check'
-                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-                }
+                dependencyCheck additionalArguments: "--nvdApiKey ${NVD_KEY}", odcInstallation: 'DP-Check'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
 
         stage('Build Artifact') {
             steps {
                 sh 'mvn clean package -DskipTests -Dcheckstyle.skip'
+            }
+        }
+
+        stage('Upload WAR to Nexus') {
+            steps {
+                nexusArtifactUploader(
+                    artifacts: [[
+                        artifactId: 'autodiscovery',
+                        classifier: '',
+                        file: 'target/autodiscovery.war',
+                        type: 'war'
+                    ]],
+                    credentialsId: 'nexus-creds',
+                    groupId: 'com.autodiscovery',
+                    nexusUrl: 'nexus.tundeafod.click',
+                    nexusVersion: 'nexus3',
+                    protocol: 'https',
+                    repository: 'nexus-repo',
+                    version: '1.0.0'
+                )
             }
         }
 
@@ -49,29 +70,43 @@ pipeline {
         stage('Trivy FS Scan') {
             steps {
                 retry(2) {
-                    sh 'trivy fs --insecure . > trivyfs.txt || true'
+                    sh "trivy fs . > trivyfs.txt || true"
                 }
             }
         }
 
         stage('Docker Login & Push') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'nexus-repo', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                    retry(2) {
-                        sh """
-                            echo \$NEXUS_PASS | docker login -u \$NEXUS_USER --password-stdin ${NEXUS_REPO}
-                            docker tag ${IMAGE_NAME} ${NEXUS_REPO}/${IMAGE_NAME}
-                            docker push ${NEXUS_REPO}/${IMAGE_NAME}
-                        """
-                    }
-                }
+                sh """
+                    echo $NEXUS_PASSWORD | docker login --username $NEXUS_USER --password-stdin $NEXUS_REPO
+                    docker tag ${IMAGE_NAME} $NEXUS_REPO/${IMAGE_NAME}
+                    docker push $NEXUS_REPO/${IMAGE_NAME}
+                """
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
                 retry(2) {
-                    sh "trivy image --insecure ${NEXUS_REPO}/${IMAGE_NAME} > trivyimage.txt || true"
+                    sh "trivy image $NEXUS_REPO/${IMAGE_NAME} > trivyimage.txt || true"
+                }
+            }
+        }
+
+        stage('Wait for Stage ELB') {
+            steps {
+                script {
+                    retry(10) {
+                        sleep 15
+                        def status = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.autodiscovery.click', returnStdout: true).trim()
+                        if (status == '200') {
+                            echo "Stage ELB is healthy."
+                            return
+                        } else {
+                            echo "Stage ELB not ready yet (status: ${status}). Retrying..."
+                            error("Stage ELB not ready")
+                        }
+                    }
                 }
             }
         }
@@ -79,10 +114,10 @@ pipeline {
         stage('Deploy to Stage') {
             steps {
                 sshagent(['ansible-key']) {
-                    sh '''
+                    sh """
                         ssh -o StrictHostKeyChecking=no ec2-user@3.8.33.146 \
-                        "ansible-playbook -i /etc/ansible/stage-hosts /etc/ansible/stage-playbook.yml"
-                    '''
+                        "ansible-playbook -i /etc/ansible/stage-hosts /etc/ansible/stage-playbook.yml --extra-vars 'docker_image=${IMAGE_NAME} nexus_repo=${NEXUS_REPO}'"
+                    """
                 }
             }
         }
@@ -92,7 +127,7 @@ pipeline {
                 retry(3) {
                     sleep 30
                     script {
-                        def status = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.tundeafod.click', returnStdout: true).trim()
+                        def status = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.autodiscovery.click', returnStdout: true).trim()
                         def color = status == '200' ? 'good' : 'danger'
                         slackSend(color: color, message: "Stage app HTTP status: ${status}", tokenCredentialId: 'slack')
                         if (status != '200') { error("Stage not ready") }
@@ -109,13 +144,31 @@ pipeline {
             }
         }
 
+        stage('Wait for Prod ELB') {
+            steps {
+                script {
+                    retry(10) {
+                        sleep 15
+                        def status = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.autodiscovery.click', returnStdout: true).trim()
+                        if (status == '200') {
+                            echo "Prod ELB is healthy."
+                            return
+                        } else {
+                            echo "Prod ELB not ready yet (status: ${status}). Retrying..."
+                            error("Prod ELB not ready")
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Deploy to Prod') {
             steps {
                 sshagent(['ansible-key']) {
-                    sh '''
+                    sh """
                         ssh -o StrictHostKeyChecking=no ec2-user@3.8.33.146 \
-                        "ansible-playbook -i /etc/ansible/prod-hosts /etc/ansible/prod-playbook.yml"
-                    '''
+                        "ansible-playbook -i /etc/ansible/prod-hosts /etc/ansible/prod-playbook.yml --extra-vars 'docker_image=${IMAGE_NAME} nexus_repo=${NEXUS_REPO}'"
+                    """
                 }
             }
         }
@@ -125,7 +178,7 @@ pipeline {
                 retry(3) {
                     sleep 30
                     script {
-                        def status = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.tundeafod.click', returnStdout: true).trim()
+                        def status = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.autodiscovery.click', returnStdout: true).trim()
                         def color = status == '200' ? 'good' : 'danger'
                         slackSend(color: color, message: "Prod app HTTP status: ${status}", tokenCredentialId: 'slack')
                         if (status != '200') { error("Prod not ready") }
