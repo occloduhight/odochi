@@ -41,41 +41,82 @@ pipeline{
                 sh 'mvn clean package -DskipTests -Dcheckstyle.skip'
             }
         }
-       stage('Log Into Nexus Docker Repo') {
+       stage('Push Artifact to Nexus Repo') {
     steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'nexus-docker-username',  // Jenkins credential ID
-            usernameVariable: 'NEXUS_USER',
-            passwordVariable: 'NEXUS_PASS'
-        )]) {
-            sh """
-                echo \$NEXUS_PASS | docker login https://nexus.odochidevops.space:443 --username \$NEXUS_USER --password-stdin
-            """
+        nexusArtifactUploader artifacts: [[artifactId: 'spring-petclinic',
+        classifier: '',
+        file: 'target/spring-petclinic-2.4.2.war',
+        type: 'war']],
+        credentialsId: 'nexus-maven-cred',
+        groupId: 'Petclinic',
+        nexusUrl: 'nexus.odochidevops.space',
+        nexusVersion: 'nexus3',
+        protocol: 'https',
+        repository: 'nexus-maven-repo',
+        version: '1.0'
         }
+}
+    
+stage('Build Docker Image') {
+    steps {
+        sh 'docker build -t $NEXUS_REPO/nexus-docker-repo/apppetclinic:2.4.2 .'
+    
     }
 }
 
-stage('Build Docker Image') {
+stage('Log Into Nexus Docker Repo') {
     steps {
-        sh """
-            docker build -t nexus.odochidevops.space:443/apppetclinic:2.4.2 .
-        """
+        sh 'docker login --username $NEXUS_USER --password $NEXUS_PASSWORD $NEXUS_REPO'
     }
 }
 
 stage('Trivy image Scan') {
     steps {
-        sh "trivy image -f table nexus.odochidevops.space:443/apppetclinic:2.4.2 > trivyfs.txt"
+        sh "trivy image -f table $NEXUS_REPO/nexus-docker-repo/apppetclinic:2.4.2 > trivyfs.txt"
     }
 }
 
 stage('Push to Nexus Docker Repo') {
     steps {
-        sh "docker push nexus.odochidevops.space:443/apppetclinic:2.4.2"
+        sh "docker push $NEXUS_REPO/nexus-docker-repo/apppetclinic:2.4.2"
+    }
+}
+stage('prune docker images') {
+    steps {
+        sh 'docker image prune -f'
     }
 }
 
+        stage('Deploy to stage') {
 
+            steps {
+                script {
+                    // Start SSM session to bastion with port forwarding for SSH (port 22)
+                    sh '''
+                      aws ssm start-session \
+                        --target ${BASTION_ID} \
+                        --region ${AWS_REGION} \
+                        --document-name AWS-StartPortForwardingSession \
+                        --parameters '{"portNumber":["22"],"localPortNumber":["9998"]}' \
+                        &
+                      sleep 5   
+                    '''
+                    // SSH into Bastion (via local port 9999), then hop to Ansible server
+                    sshagent(['bastion-key', 'ansible-key']) {
+                      sh '''
+                        ssh -o StrictHostKeyChecking=no \
+                            -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9998" \
+                            ec2-user@${ANSIBLE_IP} \
+                            "ansible-playbook -i /etc/ansible/stage_hosts /etc/ansible/deployment.yml"
+                      '''
+                    }
+                    // Kill the SSM session after deployment
+                    sh 'pkill -f "aws ssm start-session"'
+                }
+  
+            }
+
+        }
         stage('check stage website availability') {
             steps {
                  sh "sleep 90"
