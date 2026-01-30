@@ -41,92 +41,40 @@ pipeline{
                 sh 'mvn clean package -DskipTests -Dcheckstyle.skip'
             }
         }
-       stage('Push Artifact to Nexus Repo') {
+       stage('Log Into Nexus Docker Repo') {
     steps {
-        script {
-            try {
-                nexusArtifactUploader(
-                    nexusVersion: 'nexus3',
-                    protocol: 'https',
-                    nexusUrl: 'nexus.odochidevops.space',
-                    repository: 'nexus-maven-repo',
-                    groupId: 'org.springframework.samples',
-                    version: '2.4.2',
-                    credentialsId: 'nexus-maven-cred',
-                    artifacts: [
-                        [
-                            artifactId: 'spring-petclinic',
-                            classifier: '',
-                            file: 'target/spring-petclinic-2.4.2.war',
-                            type: 'war'
-                        ]
-                    ]
-                )
-            } catch (e) {
-                error "Nexus upload failed: ${e}"
-            }
+        withCredentials([usernamePassword(
+            credentialsId: 'nexus-docker-username',  // Jenkins credential ID
+            usernameVariable: 'NEXUS_USER',
+            passwordVariable: 'NEXUS_PASS'
+        )]) {
+            sh """
+                echo \$NEXUS_PASS | docker login https://nexus.odochidevops.space --username \$NEXUS_USER --password-stdin
+            """
         }
     }
 }
-
 
 stage('Build Docker Image') {
     steps {
-        sh '''
-            docker build \
-            -t ${NEXUS_REPO}/nexus-docker-repo/apppetclinic:2.4.2 \
-            .
-        '''
+        sh """
+            docker build -t nexus.odochidevops.space/apppetclinic:2.4.2 .
+        """
     }
 }
 
-        stage('Log Into Nexus Docker Repo') {
-            steps {
-                sh 'docker login --username $NEXUS_USER --password $NEXUS_PASSWORD $NEXUS_REPO'
-            }
-        }
-        stage('Trivy image Scan') {
-            steps {
-                sh "trivy image -f table $NEXUS_REPO/nexus-docker-repo/apppetclinic > trivyfs.txt"
-            }
-        }
-        stage('Push to Nexus Docker Repo') {
-            steps {
-                sh 'docker push $NEXUS_REPO/nexus-docker-repo/apppetclinic'
-            }
-        }
-        stage('prune docker images') {
-            steps {
-                sh 'docker image prune -a -f'
-            }
-        }
-       stage ('Deploying to Stage Environment') {
-            steps {
-               script {
-                  // Start SSM session to bastion with port forwarding
-                  sh '''
-                    aws ssm start-session \
-                      --target ${BASTION_ID} \
-                      --region ${AWS_REGION} \
-                      --document-name AWS-StartPortForwardingSession \
-                      --parameters '{"portNumber":["22"],"localPortNumber":["9999"]}' \
-                      &
-                    sleep 5
-                  '''
+stage('Trivy image Scan') {
+    steps {
+        sh "trivy image -f table nexus.odochidevops.space/apppetclinic:2.4.2 > trivyfs.txt"
+    }
+}
 
-                  // SSH into Bastion (via local port 9999), then hop to Ansible server
-                  sshagent(['bastion-key', 'ansible-key']) {
-                    sh '''
-                      ssh -o StrictHostKeyChecking=no -p 9999 ubuntu@localhost \
-                        "ssh -o StrictHostKeyChecking=no ec2-user@${ANSIBLE_IP} \
-                          'ansible-playbook -i /etc/ansible/stage_hosts /etc/ansible/deployment.yml'"
-                    '''
-                  }
-                  // Kill the SSM session after deploy
-                  sh 'pkill -f "aws ssm start-session"'
-                }
-              }
-            }
+stage('Push to Nexus Docker Repo') {
+    steps {
+        sh "docker push nexus.odochidevops.space/apppetclinic:2.4.2"
+    }
+}
+
 
         stage('check stage website availability') {
             steps {
