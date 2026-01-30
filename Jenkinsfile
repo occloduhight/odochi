@@ -49,7 +49,7 @@ pipeline{
             passwordVariable: 'NEXUS_PASS'
         )]) {
             sh """
-                echo \$NEXUS_PASS | docker login https://nexus.odochidevops.space --username \$NEXUS_USER --password-stdin
+                echo \$NEXUS_PASS | docker login https://nexus.odochidevops.space:443 --username \$NEXUS_USER --password-stdin
             """
         }
     }
@@ -58,20 +58,20 @@ pipeline{
 stage('Build Docker Image') {
     steps {
         sh """
-            docker build -t nexus.odochidevops.space/apppetclinic:2.4.2 .
+            docker build -t nexus.odochidevops.space:443/apppetclinic:2.4.2 .
         """
     }
 }
 
 stage('Trivy image Scan') {
     steps {
-        sh "trivy image -f table nexus.odochidevops.space/apppetclinic:2.4.2 > trivyfs.txt"
+        sh "trivy image -f table nexus.odochidevops.space:443/apppetclinic:2.4.2 > trivyfs.txt"
     }
 }
 
 stage('Push to Nexus Docker Repo') {
     steps {
-        sh "docker push nexus.odochidevops.space/apppetclinic:2.4.2"
+        sh "docker push nexus.odochidevops.space:443/apppetclinic:2.4.2"
     }
 }
 
