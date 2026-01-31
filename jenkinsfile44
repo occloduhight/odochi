@@ -4,14 +4,15 @@ pipeline {
     environment {
         NEXUS_URL      = 'nexus.odochidevops.space'
         NEXUS_USER     = credentials('nexus-docker-username')
-        NEXUS_PASSWORD = credentials('nexus-docker-password')
-        DOCKER_IMAGE   = 'nexus.odochidevops.space/nexus-docker-repo/apppetclinic:2.4.2'
+        NEXUS_PASSWORD= credentials('nexus-docker-password')
+        // DOCKER_IMAGE = 'nexus.odochidevops.space:5000/nexus-docker-repo/apppetclinic:2.4.2'
+        DOCKER_IMAGE = 'nexus.odochidevops.space/nexus-docker-repo/apppetclinic:2.4.2'
         ANSIBLE_IP     = credentials('ansible-ip')
         BASTION_ID     = credentials('bastion-id')
         NVD_API_KEY    = credentials('nvd-key')
         AWS_REGION     = 'eu-west-3'
     }
-
+}
     triggers {
         pollSCM('* * * * *') // Runs every minute
     }
@@ -25,7 +26,7 @@ pipeline {
                 }
             }
         }
-
+    }
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
@@ -66,20 +67,24 @@ pipeline {
             }
         }
 
-        stage('Docker: Build and Push') {
+        stage('Build Docker Image') {
             steps {
-                sh '''
-                # Log in to Nexus Docker repository
-                echo "$NEXUS_PASSWORD" | docker login https://nexus.odochidevops.space --username "$NEXUS_USER" --password-stdin
-
-                # Build Docker image
-                docker build -t ${DOCKER_IMAGE} .
-
-                # Push Docker image to Nexus
-                docker push ${DOCKER_IMAGE}
-                '''
+                sh "docker build -t ${DOCKER_IMAGE} ."
             }
         }
+   stage('Docker: Login and Push to Nexus') {
+    steps {
+        sh '''
+        # Log in to Nexus Docker repository
+        echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space \
+          --username "$NEXUS_USER" \
+          --password-stdin
+
+        # Push the Docker image
+        docker push ${DOCKER_IMAGE}
+        '''
+    }
+}
 
         stage('Trivy Image Scan') {
             steps {
@@ -123,11 +128,19 @@ pipeline {
             steps {
                 sh 'sleep 90'
                 script {
-                    def code = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.odochidevops.space', returnStdout: true).trim()
+                    def code = sh(
+                        script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.odochidevops.space',
+                        returnStdout: true
+                    ).trim()
+
                     if (code == '200') {
-                        slackSend(color: 'good', message: "Stage environment is UP (HTTP ${code})", tokenCredentialId: 'slack')
+                        slackSend(color: 'good',
+                                  message: "Stage environment is UP (HTTP ${code})",
+                                  tokenCredentialId: 'slack')
                     } else {
-                        slackSend(color: 'danger', message: "Stage environment DOWN (HTTP ${code})", tokenCredentialId: 'slack')
+                        slackSend(color: 'danger',
+                                  message: "Stage environment DOWN (HTTP ${code})",
+                                  tokenCredentialId: 'slack')
                     }
                 }
             }
@@ -175,6 +188,8 @@ pipeline {
                               "ansible-playbook -i /etc/ansible/prod_hosts /etc/ansible/deployment.yml"
                         '''
                     }
+
+                    // sh 'pkill -f "aws ssm start-session"'
                 }
             }
         }
@@ -183,14 +198,22 @@ pipeline {
             steps {
                 sh 'sleep 90'
                 script {
-                    def code = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.odochidevops.space', returnStdout: true).trim()
+                    def code = sh(
+                        script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.odochidevops.space',
+                        returnStdout: true
+                    ).trim()
+
                     if (code == '200') {
-                        slackSend(color: 'good', message: "Production is UP (HTTP ${code})", tokenCredentialId: 'slack')
+                        slackSend(color: 'good',
+                                  message: "Production is UP (HTTP ${code})",
+                                  tokenCredentialId: 'slack')
                     } else {
-                        slackSend(color: 'danger', message: "Production is DOWN (HTTP ${code})", tokenCredentialId: 'slack')
+                        slackSend(color: 'danger',
+                                  message: "Production is DOWN (HTTP ${code})",
+                                  tokenCredentialId: 'slack')
                     }
                 }
             }
         }
-    }
-}
+    
+
