@@ -5,7 +5,7 @@ pipeline {
         NEXUS_URL      = 'nexus.odochidevops.space'
         NEXUS_USER     = credentials('nexus-docker-username')
         NEXUS_PASSWORD= credentials('nexus-docker-password')
-        DOCKER_IMAGE = 'nexus.odochidevops.space:8081/docker-hosted/apppetclinic:2.4.2'
+        DOCKER_IMAGE = 'nexus.odochidevops.space:8081/nexus-docker-repo/apppetclinic:2.4.2'
         ANSIBLE_IP     = credentials('ansible-ip')
         BASTION_ID     = credentials('bastion-id')
         NVD_API_KEY    = credentials('nvd-key')
@@ -71,17 +71,27 @@ pipeline {
                 sh "docker build -t ${DOCKER_IMAGE} ."
             }
         }
-
         stage('Docker: Login and Push to Nexus') {
-            steps {
-                sh '''
-                  echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space:8081 \
-                    --username "$NEXUS_USER" \
-                    --password-stdin
-                '''
-                sh "docker push ${DOCKER_IMAGE}"
-            }
-        }
+    steps {
+        // Use HTTP explicitly and allow insecure registry
+        sh '''
+          docker --insecure-registry login -u "$NEXUS_USER" -p "$NEXUS_PASSWORD" http://nexus.odochidevops.space:8081
+          docker push ${DOCKER_IMAGE}
+        '''
+    }
+}
+
+
+        // stage('Docker: Login and Push to Nexus') {
+        //     steps {
+        //         sh '''
+        //           echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space:8081 \
+        //             --username "$NEXUS_USER" \
+        //             --password-stdin
+        //         '''
+        //         sh "docker push ${DOCKER_IMAGE}"
+        //     }
+        // }
 
         stage('Trivy Image Scan') {
             steps {
