@@ -68,22 +68,22 @@ pipeline {
 
         stage('Docker: Build and Push') {
             steps {
-                sh '''
+                sh """
                 # Log in to Nexus Docker repository
-                echo "$NEXUS_PASSWORD" | docker login https://nexus.odochidevops.space --username "$NEXUS_USER" --password-stdin
+                echo "$NEXUS_PASSWORD" | docker login https://$NEXUS_URL --username "$NEXUS_USER" --password-stdin
 
                 # Build Docker image
-                docker build -t ${DOCKER_IMAGE} .
+                docker build -t $DOCKER_IMAGE .
 
-                # Push Docker image to Nexus
-                docker push ${DOCKER_IMAGE}
-                '''
+                # Push Docker image
+                docker push $DOCKER_IMAGE
+                """
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
-                sh "trivy image -f table ${DOCKER_IMAGE} > trivy-report.txt"
+                sh "trivy image -f table $DOCKER_IMAGE > trivy-report.txt"
             }
         }
 
@@ -96,22 +96,22 @@ pipeline {
         stage('Deploy to Stage') {
             steps {
                 script {
-                    sh '''
+                    sh """
                       aws ssm start-session \
-                        --target ${BASTION_ID} \
-                        --region ${AWS_REGION} \
+                        --target $BASTION_ID \
+                        --region $AWS_REGION \
                         --document-name AWS-StartPortForwardingSession \
                         --parameters '{"portNumber":["22"],"localPortNumber":["9998"]}' &
                       sleep 5
-                    '''
+                    """
 
                     sshagent(['bastion-key', 'ansible-key']) {
-                        sh '''
+                        sh """
                           ssh -o StrictHostKeyChecking=no \
                               -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9998" \
-                              ec2-user@${ANSIBLE_IP} \
+                              ec2-user@$ANSIBLE_IP \
                               "ansible-playbook -i /etc/ansible/stage_hosts /etc/ansible/deployment.yml"
-                        '''
+                        """
                     }
 
                     sh 'pkill -f "aws ssm start-session"'
@@ -135,7 +135,7 @@ pipeline {
 
         stage('DAST Scan') {
             steps {
-                sh '''
+                sh """
                   chmod 777 $(pwd)
                   docker run -v $(pwd):/zap/wrk/:rw \
                     -t ghcr.io/zaproxy/zaproxy:stable \
@@ -143,7 +143,7 @@ pipeline {
                     -t https://stage.odochidevops.space \
                     -g gen.conf \
                     -r testreport.html || true
-                '''
+                """
             }
         }
 
@@ -158,22 +158,22 @@ pipeline {
         stage('Deploy to Prod') {
             steps {
                 script {
-                    sh '''
+                    sh """
                       aws ssm start-session \
-                        --target ${BASTION_ID} \
-                        --region ${AWS_REGION} \
+                        --target $BASTION_ID \
+                        --region $AWS_REGION \
                         --document-name AWS-StartPortForwardingSession \
                         --parameters '{"portNumber":["22"],"localPortNumber":["9999"]}' &
                       sleep 5
-                    '''
+                    """
 
                     sshagent(['bastion-key', 'ansible-key']) {
-                        sh '''
+                        sh """
                           ssh -o StrictHostKeyChecking=no \
                               -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9999" \
-                              ec2-user@${ANSIBLE_IP} \
+                              ec2-user@$ANSIBLE_IP \
                               "ansible-playbook -i /etc/ansible/prod_hosts /etc/ansible/deployment.yml"
-                        '''
+                        """
                     }
                 }
             }
