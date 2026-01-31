@@ -2,25 +2,16 @@ pipeline {
     agent any
 
     environment {
-        // NEXUS_URL      = 'nexus.odochidevops.space'
-        // NEXUS_USER     = credentials('nexus-docker-username')
-        // NEXUS_PASSWORD = credentials('nexus-docker-password')
-        // DOCKER_IMAGE = 'nexus.odochidevops.space/repository/nexus-docker-repo/apppetclinic:2.4.2'
-        // ANSIBLE_IP     = credentials('ansible-ip')
-        // BASTION_ID     = credentials('bastion-id')
-        // NVD_API_KEY    = credentials('nvd-key')
-        // AWS_REGION     = 'eu-west-3'
-         NEXUS_URL      = 'nexus.odochidevops.space'
+        NEXUS_URL      = 'nexus.odochidevops.space'
         NEXUS_USER     = credentials('nexus-docker-username')
         NEXUS_PASSWORD= credentials('nexus-docker-password')
-        // DOCKER_IMAGE = 'nexus.odochidevops.space:5000/nexus-docker-repo/apppetclinic:2.4.2'
         DOCKER_IMAGE = 'nexus.odochidevops.space/nexus-docker-repo/apppetclinic:2.4.2'
         ANSIBLE_IP     = credentials('ansible-ip')
         BASTION_ID     = credentials('bastion-id')
         NVD_API_KEY    = credentials('nvd-key')
         AWS_REGION     = 'eu-west-3'
     }
-
+}
     triggers {
         pollSCM('* * * * *') // Runs every minute
     }
@@ -34,7 +25,7 @@ pipeline {
                 }
             }
         }
-
+    }
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
@@ -67,13 +58,20 @@ pipeline {
                 ]],
                 credentialsId: 'nexus-maven-cred',
                 groupId: 'Petclinic',
-                nexusUrl: "${NEXUS_URL}",
+                nexusUrl: 'nexus.odochidevops.space',
                 nexusVersion: 'nexus3',
                 protocol: 'https',
                 repository: 'nexus-maven-repo',
                 version: '1.0'
             }
         }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${DOCKER_IMAGE} ."
+            }
+        }
+
         stage('Docker: Build and Push') {
     steps {
         sh '''
@@ -83,22 +81,14 @@ pipeline {
         '''
     }
 }
+//           --username "$NEXUS_USER" \
+//           --password-stdin
 
-
-        // stage('Docker: Build and Push') {
-        //     steps {
-        //         sh """
-        //         # Log in to Nexus Docker repository
-        //         echo "${NEXUS_PASSWORD}" | docker login https://${NEXUS_URL} --username "${NEXUS_USER}" --password-stdin
-
-        //         # Build Docker image
-        //         docker build -t ${DOCKER_IMAGE} .
-
-        //         # Push Docker image
-        //         docker push ${DOCKER_IMAGE}
-        //         """
-        //     }
-        // }
+//         # Push the Docker image
+//         docker push ${DOCKER_IMAGE}
+//         '''
+//     }
+// }
 
         stage('Trivy Image Scan') {
             steps {
@@ -115,22 +105,22 @@ pipeline {
         stage('Deploy to Stage') {
             steps {
                 script {
-                    sh """
-                    aws ssm start-session \
+                    sh '''
+                      aws ssm start-session \
                         --target ${BASTION_ID} \
                         --region ${AWS_REGION} \
                         --document-name AWS-StartPortForwardingSession \
                         --parameters '{"portNumber":["22"],"localPortNumber":["9998"]}' &
-                    sleep 5
-                    """
+                      sleep 5
+                    '''
 
                     sshagent(['bastion-key', 'ansible-key']) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no \
-                            -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9998" \
-                            ec2-user@${ANSIBLE_IP} \
-                            "ansible-playbook -i /etc/ansible/stage_hosts /etc/ansible/deployment.yml"
-                        """
+                        sh '''
+                          ssh -o StrictHostKeyChecking=no \
+                              -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9998" \
+                              ec2-user@${ANSIBLE_IP} \
+                              "ansible-playbook -i /etc/ansible/stage_hosts /etc/ansible/deployment.yml"
+                        '''
                     }
 
                     sh 'pkill -f "aws ssm start-session"'
@@ -142,11 +132,19 @@ pipeline {
             steps {
                 sh 'sleep 90'
                 script {
-                    def code = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.odochidevops.space', returnStdout: true).trim()
+                    def code = sh(
+                        script: 'curl -s -o /dev/null -w "%{http_code}" https://stage.odochidevops.space',
+                        returnStdout: true
+                    ).trim()
+
                     if (code == '200') {
-                        slackSend(color: 'good', message: "Stage environment is UP (HTTP ${code})", tokenCredentialId: 'slack')
+                        slackSend(color: 'good',
+                                  message: "Stage environment is UP (HTTP ${code})",
+                                  tokenCredentialId: 'slack')
                     } else {
-                        slackSend(color: 'danger', message: "Stage environment DOWN (HTTP ${code})", tokenCredentialId: 'slack')
+                        slackSend(color: 'danger',
+                                  message: "Stage environment DOWN (HTTP ${code})",
+                                  tokenCredentialId: 'slack')
                     }
                 }
             }
@@ -154,15 +152,15 @@ pipeline {
 
         stage('DAST Scan') {
             steps {
-                sh """
-                chmod 777 $(pwd)
-                docker run -v $(pwd):/zap/wrk/:rw \
+                sh '''
+                  chmod 777 $(pwd)
+                  docker run -v $(pwd):/zap/wrk/:rw \
                     -t ghcr.io/zaproxy/zaproxy:stable \
                     zap-baseline.py \
                     -t https://stage.odochidevops.space \
                     -g gen.conf \
                     -r testreport.html || true
-                """
+                '''
             }
         }
 
@@ -177,23 +175,25 @@ pipeline {
         stage('Deploy to Prod') {
             steps {
                 script {
-                    sh """
-                    aws ssm start-session \
+                    sh '''
+                      aws ssm start-session \
                         --target ${BASTION_ID} \
                         --region ${AWS_REGION} \
                         --document-name AWS-StartPortForwardingSession \
                         --parameters '{"portNumber":["22"],"localPortNumber":["9999"]}' &
-                    sleep 5
-                    """
+                      sleep 5
+                    '''
 
                     sshagent(['bastion-key', 'ansible-key']) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no \
-                            -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9999" \
-                            ec2-user@${ANSIBLE_IP} \
-                            "ansible-playbook -i /etc/ansible/prod_hosts /etc/ansible/deployment.yml"
-                        """
+                        sh '''
+                          ssh -o StrictHostKeyChecking=no \
+                              -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9999" \
+                              ec2-user@${ANSIBLE_IP} \
+                              "ansible-playbook -i /etc/ansible/prod_hosts /etc/ansible/deployment.yml"
+                        '''
                     }
+
+                    // sh 'pkill -f "aws ssm start-session"'
                 }
             }
         }
@@ -202,15 +202,22 @@ pipeline {
             steps {
                 sh 'sleep 90'
                 script {
-                    def code = sh(script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.odochidevops.space', returnStdout: true).trim()
+                    def code = sh(
+                        script: 'curl -s -o /dev/null -w "%{http_code}" https://prod.odochidevops.space',
+                        returnStdout: true
+                    ).trim()
+
                     if (code == '200') {
-                        slackSend(color: 'good', message: "Production is UP (HTTP ${code})", tokenCredentialId: 'slack')
+                        slackSend(color: 'good',
+                                  message: "Production is UP (HTTP ${code})",
+                                  tokenCredentialId: 'slack')
                     } else {
-                        slackSend(color: 'danger', message: "Production is DOWN (HTTP ${code})", tokenCredentialId: 'slack')
+                        slackSend(color: 'danger',
+                                  message: "Production is DOWN (HTTP ${code})",
+                                  tokenCredentialId: 'slack')
                     }
                 }
             }
         }
+    
 
-    }
-}
