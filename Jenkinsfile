@@ -5,7 +5,7 @@ pipeline {
         NEXUS_URL      = 'nexus.odochidevops.space'
         NEXUS_USER     = credentials('nexus-docker-username')
         NEXUS_PASSWORD = credentials('nexus-docker-password')
-        DOCKER_IMAGE   = 'nexus.odochidevops.space/nexus-docker-repo/apppetclinic:2.4.2'
+        DOCKER_IMAGE = 'nexus.odochidevops.space/repository/nexus-docker-repo/apppetclinic:2.4.2'
         ANSIBLE_IP     = credentials('ansible-ip')
         BASTION_ID     = credentials('bastion-id')
         NVD_API_KEY    = credentials('nvd-key')
@@ -58,32 +58,42 @@ pipeline {
                 ]],
                 credentialsId: 'nexus-maven-cred',
                 groupId: 'Petclinic',
-                nexusUrl: 'nexus.odochidevops.space',
+                nexusUrl: "${NEXUS_URL}",
                 nexusVersion: 'nexus3',
                 protocol: 'https',
                 repository: 'nexus-maven-repo',
                 version: '1.0'
             }
         }
-
         stage('Docker: Build and Push') {
-            steps {
-                sh """
-                # Log in to Nexus Docker repository
-                echo "$NEXUS_PASSWORD" | docker login https://$NEXUS_URL --username "$NEXUS_USER" --password-stdin
+    steps {
+        sh '''
+        echo "$NEXUS_PASSWORD" | docker login https://nexus.odochidevops.space --username "$NEXUS_USER" --password-stdin
+        docker build -t $DOCKER_IMAGE .
+        docker push $DOCKER_IMAGE
+        '''
+    }
+}
 
-                # Build Docker image
-                docker build -t $DOCKER_IMAGE .
 
-                # Push Docker image
-                docker push $DOCKER_IMAGE
-                """
-            }
-        }
+        // stage('Docker: Build and Push') {
+        //     steps {
+        //         sh """
+        //         # Log in to Nexus Docker repository
+        //         echo "${NEXUS_PASSWORD}" | docker login https://${NEXUS_URL} --username "${NEXUS_USER}" --password-stdin
+
+        //         # Build Docker image
+        //         docker build -t ${DOCKER_IMAGE} .
+
+        //         # Push Docker image
+        //         docker push ${DOCKER_IMAGE}
+        //         """
+        //     }
+        // }
 
         stage('Trivy Image Scan') {
             steps {
-                sh "trivy image -f table $DOCKER_IMAGE > trivy-report.txt"
+                sh "trivy image -f table ${DOCKER_IMAGE} > trivy-report.txt"
             }
         }
 
@@ -97,20 +107,20 @@ pipeline {
             steps {
                 script {
                     sh """
-                      aws ssm start-session \
-                        --target $BASTION_ID \
-                        --region $AWS_REGION \
+                    aws ssm start-session \
+                        --target ${BASTION_ID} \
+                        --region ${AWS_REGION} \
                         --document-name AWS-StartPortForwardingSession \
                         --parameters '{"portNumber":["22"],"localPortNumber":["9998"]}' &
-                      sleep 5
+                    sleep 5
                     """
 
                     sshagent(['bastion-key', 'ansible-key']) {
                         sh """
-                          ssh -o StrictHostKeyChecking=no \
-                              -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9998" \
-                              ec2-user@$ANSIBLE_IP \
-                              "ansible-playbook -i /etc/ansible/stage_hosts /etc/ansible/deployment.yml"
+                        ssh -o StrictHostKeyChecking=no \
+                            -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9998" \
+                            ec2-user@${ANSIBLE_IP} \
+                            "ansible-playbook -i /etc/ansible/stage_hosts /etc/ansible/deployment.yml"
                         """
                     }
 
@@ -136,8 +146,8 @@ pipeline {
         stage('DAST Scan') {
             steps {
                 sh """
-                  chmod 777 $(pwd)
-                  docker run -v $(pwd):/zap/wrk/:rw \
+                chmod 777 $(pwd)
+                docker run -v $(pwd):/zap/wrk/:rw \
                     -t ghcr.io/zaproxy/zaproxy:stable \
                     zap-baseline.py \
                     -t https://stage.odochidevops.space \
@@ -159,20 +169,20 @@ pipeline {
             steps {
                 script {
                     sh """
-                      aws ssm start-session \
-                        --target $BASTION_ID \
-                        --region $AWS_REGION \
+                    aws ssm start-session \
+                        --target ${BASTION_ID} \
+                        --region ${AWS_REGION} \
                         --document-name AWS-StartPortForwardingSession \
                         --parameters '{"portNumber":["22"],"localPortNumber":["9999"]}' &
-                      sleep 5
+                    sleep 5
                     """
 
                     sshagent(['bastion-key', 'ansible-key']) {
                         sh """
-                          ssh -o StrictHostKeyChecking=no \
-                              -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9999" \
-                              ec2-user@$ANSIBLE_IP \
-                              "ansible-playbook -i /etc/ansible/prod_hosts /etc/ansible/deployment.yml"
+                        ssh -o StrictHostKeyChecking=no \
+                            -o ProxyCommand="ssh -W %h:%p -o StrictHostKeyChecking=no ubuntu@localhost -p 9999" \
+                            ec2-user@${ANSIBLE_IP} \
+                            "ansible-playbook -i /etc/ansible/prod_hosts /etc/ansible/deployment.yml"
                         """
                     }
                 }
@@ -192,5 +202,6 @@ pipeline {
                 }
             }
         }
+
     }
 }
