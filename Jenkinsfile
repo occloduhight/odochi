@@ -5,14 +5,14 @@ pipeline {
         NEXUS_URL      = 'nexus.odochidevops.space'
         NEXUS_USER     = credentials('nexus-docker-username')
         NEXUS_PASSWORD= credentials('nexus-docker-password')
-        DOCKER_IMAGE = 'nexus.odochidevops.space:5000/nexus-docker-repo/apppetclinic:2.4.2'
-        // DOCKER_IMAGE = 'nexus.odochidevops.space/nexus-docker-repo/apppetclinic:2.4.2'
+        // DOCKER_IMAGE = 'nexus.odochidevops.space:5000/nexus-docker-repo/apppetclinic:2.4.2'
+        DOCKER_IMAGE = 'nexus.odochidevops.space/nexus-docker-repo/apppetclinic:2.4.2'
         ANSIBLE_IP     = credentials('ansible-ip')
         BASTION_ID     = credentials('bastion-id')
         NVD_API_KEY    = credentials('nvd-key')
         AWS_REGION     = 'eu-west-3'
     }
-
+}
     triggers {
         pollSCM('* * * * *') // Runs every minute
     }
@@ -26,7 +26,7 @@ pipeline {
                 }
             }
         }
-
+    }
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
@@ -72,51 +72,19 @@ pipeline {
                 sh "docker build -t ${DOCKER_IMAGE} ."
             }
         }
-    stage('Docker: Login and Push to Nexus') {
+   stage('Docker: Login and Push to Nexus') {
     steps {
         sh '''
-        echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space:5000 \
+        # Log in to Nexus Docker repository
+        echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space \
           --username "$NEXUS_USER" \
           --password-stdin
 
+        # Push the Docker image
+        docker push ${DOCKER_IMAGE}
+        '''
     }
 }
-
-        // stage('Log Into Nexus Docker Repo') {
-
-        //     steps {
-
-        //         sh 'docker login --username $NEXUS_USER --password $NEXUS_PASSWORD $NEXUS_REPO'
-
-        //     }
-
-        // }
-        
-
-//         stage('Docker: Login and Push to Nexus') {
-//     steps {
-//         sh '''
-//         echo "$NEXUS_PASSWORD" | docker login https://nexus.odochidevops.space \
-//             --username "$NEXUS_USER" \
-//             --password-stdin
-
-//         docker push ${DOCKER_IMAGE}
-//         '''
-//     }
-// }
-
-
-//             stage('Docker: Login and Push to Nexus') {
-//         steps {
-//             sh '''
-//             echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space \
-//              --username "$NEXUS_USER" \
-//              --password-stdin
-//             docker push ${DOCKER_IMAGE}
-//             '''
-//     }
-// }
-
 
         stage('Trivy Image Scan') {
             steps {
