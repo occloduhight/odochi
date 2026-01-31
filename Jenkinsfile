@@ -72,16 +72,29 @@ pipeline {
             }
         }
 
-            stage('Docker: Login and Push to Nexus') {
-        steps {
-            sh '''
-            echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space \
-             --username "$NEXUS_USER" \
-             --password-stdin
-            docker push ${DOCKER_IMAGE}
-            '''
+        stage('Docker: Login and Push to Nexus') {
+    steps {
+        sh '''
+        echo "$NEXUS_PASSWORD" | docker login https://nexus.odochidevops.space \
+            --username "$NEXUS_USER" \
+            --password-stdin
+
+        docker push ${DOCKER_IMAGE}
+        '''
     }
 }
+
+
+//             stage('Docker: Login and Push to Nexus') {
+//         steps {
+//             sh '''
+//             echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space \
+//              --username "$NEXUS_USER" \
+//              --password-stdin
+//             docker push ${DOCKER_IMAGE}
+//             '''
+//     }
+// }
 
 
         stage('Trivy Image Scan') {
