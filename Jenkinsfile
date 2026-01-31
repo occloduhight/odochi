@@ -5,7 +5,8 @@ pipeline {
         NEXUS_URL      = 'nexus.odochidevops.space'
         NEXUS_USER     = credentials('nexus-docker-username')
         NEXUS_PASSWORD= credentials('nexus-docker-password')
-        DOCKER_IMAGE = 'nexus.odochidevops.space/nexus-docker-repo/apppetclinic:2.4.2'
+        DOCKER_IMAGE = 'nexus.odochidevops.space:5000/nexus-docker-repo/apppetclinic:2.4.2'
+        // DOCKER_IMAGE = 'nexus.odochidevops.space/nexus-docker-repo/apppetclinic:2.4.2'
         ANSIBLE_IP     = credentials('ansible-ip')
         BASTION_ID     = credentials('bastion-id')
         NVD_API_KEY    = credentials('nvd-key')
@@ -71,16 +72,26 @@ pipeline {
                 sh "docker build -t ${DOCKER_IMAGE} ."
             }
         }
+    stage('Docker: Login and Push to Nexus') {
+    steps {
+        sh '''
+        echo "$NEXUS_PASSWORD" | docker login nexus.odochidevops.space:5000 \
+          --username "$NEXUS_USER" \
+          --password-stdin
 
-        stage('Log Into Nexus Docker Repo') {
+    }
+}
 
-            steps {
+        // stage('Log Into Nexus Docker Repo') {
 
-                sh 'docker login --username $NEXUS_USER --password $NEXUS_PASSWORD $NEXUS_REPO'
+        //     steps {
 
-            }
+        //         sh 'docker login --username $NEXUS_USER --password $NEXUS_PASSWORD $NEXUS_REPO'
 
-        }
+        //     }
+
+        // }
+        
 
 //         stage('Docker: Login and Push to Nexus') {
 //     steps {
