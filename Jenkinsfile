@@ -5,7 +5,7 @@ pipeline {
         NEXUS_URL      = 'nexus.odochidevops.space'
         NEXUS_USER     = credentials('nexus-docker-username')
         NEXUS_PASSWORD= credentials('nexus-docker-password')
-        DOCKER_IMAGE   = DOCKER_IMAGE = 'nexus.odochidevops.space:8081/docker-hosted/apppetclinic:2.4.2'
+        DOCKER_IMAGE = 'nexus.odochidevops.space:8081/docker-hosted/apppetclinic:2.4.2'
         ANSIBLE_IP     = credentials('ansible-ip')
         BASTION_ID     = credentials('bastion-id')
         NVD_API_KEY    = credentials('nvd-key')
